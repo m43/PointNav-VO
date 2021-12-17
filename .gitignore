@@ -1,3 +1,7 @@
+.idea
+dataset
+pretrained_ckpts
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
