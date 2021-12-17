@@ -1,33 +1,29 @@
 #!/usr/bin/env python3
 
 import argparse
-import random
-import numba
 import os
-import PIL
-import numpy as np
+import random
 from collections import OrderedDict
-from gym.spaces import Discrete, Dict, Box
-
-import torch
 
 import habitat
+import numba
+import torch
+from gym.spaces import Discrete, Dict, Box
 from habitat import Config
 from habitat.core.agent import Agent
 from habitat_baselines.config.default import get_config
+from torch import nn
 
+from pointnav_vo.rl.ddppo.algo.ddppo import DDPPO
 from pointnav_vo.utils.baseline_registry import baseline_registry
-from pointnav_vo.rl.policies.resnet_policy import PointNavResNetPolicy
-from pointnav_vo.vo.models.vo_cnn import VisualOdometryCNN
+from pointnav_vo.utils.geometry_utils import (
+    compute_goal_pos,
+    pointgoal_polar2catesian,
+    NormalizedDepth2TopDownViewHabitat, NormalizedDepth2TopDownViewHabitatTorch, )
 from pointnav_vo.utils.misc_utils import (
     batch_obs,
     Resizer,
     ResizeCenterCropper,
-)
-from pointnav_vo.utils.geometry_utils import (
-    compute_goal_pos,
-    pointgoal_polar2catesian,
-    NormalizedDepth2TopDownViewHabitat,
 )
 from pointnav_vo.vo.common.common_vars import *
 
@@ -84,12 +80,13 @@ class PointNavAgent(Agent):
         action_space = Discrete(len(config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS))
 
         self.device = torch.device("cuda:{}".format(config.TORCH_GPU_ID))
+        self.device = torch.device("cpu")
 
         self.hidden_size = config.RL.PPO.hidden_size
 
         # set up nav policy
         self._set_up_nav_obs_transformer()
-        self._setup_actor_critic_agent(observation_spaces, action_space)
+        self._setup_actor_critic_agent(self.config.RL.PPO, observation_spaces, action_space)
 
         # set up vo module
         self._set_up_vo_obs_transformer()
@@ -133,10 +130,12 @@ class PointNavAgent(Agent):
         else:
             self._vo_obs_transformer = None
 
-    def _setup_actor_critic_agent(self, observation_spaces, action_space) -> None:
+    def _setup_actor_critic_agent(self, ppo_cfg, observation_spaces, action_space) -> None:
         r"""Sets up actor critic and agent for DD-PPO.
+
         Args:
             ppo_cfg: config node with relevant params
+
         Returns:
             None
         """
@@ -146,13 +145,13 @@ class PointNavAgent(Agent):
         assert policy_cls is not None, f"{self.config.RL.Policy.name} is not supported"
 
         normalize_visual_inputs_flag = (
-            "rgb" in observation_spaces.spaces
-            and "rgb" in self.config.RL.Policy.visual_types
+                "rgb" in observation_spaces.spaces
+                and "rgb" in self.config.RL.Policy.visual_types
         )
         self.actor_critic = policy_cls(
             observation_space=observation_spaces,
             action_space=action_space,
-            hidden_size=self.config.RL.PPO.hidden_size,
+            hidden_size=ppo_cfg.hidden_size,
             rnn_type=self.config.RL.Policy.rnn_backbone,
             num_recurrent_layers=self.config.RL.Policy.num_recurrent_layers,
             backbone=self.config.RL.Policy.visual_backbone,
@@ -163,41 +162,86 @@ class PointNavAgent(Agent):
         )
         self.actor_critic.to(self.device)
 
-        print("\n", self.config.RL.Policy.pretrained_ckpt, "\n")
+        if self.config.RL.DDPPO.pretrained_encoder or self.config.RL.DDPPO.pretrained:
+            pretrained_state = torch.load(
+                self.config.RL.DDPPO.pretrained_weights, map_location="cpu"
+            )
 
-        pretrained_state = torch.load(
-            self.config.RL.Policy.pretrained_ckpt, map_location=self.device
+        if self.config.RL.DDPPO.pretrained:
+            self.actor_critic.load_state_dict(
+                {
+                    k[len("actor_critic."):]: v
+                    for k, v in pretrained_state["state_dict"].items()
+                }
+            )
+        elif self.config.RL.DDPPO.pretrained_encoder:
+            prefix = "actor_critic.net.visual_encoder."
+            self.actor_critic.net.visual_encoder.load_state_dict(
+                {
+                    k[len(prefix):]: v
+                    for k, v in pretrained_state["state_dict"].items()
+                    if k.startswith(prefix)
+                }
+            )
+
+        if not self.config.RL.DDPPO.train_encoder:
+            self._static_encoder = True
+            for param in self.actor_critic.net.visual_encoder.parameters():
+                param.requires_grad_(False)
+
+        if self.config.RL.DDPPO.reset_critic:
+            nn.init.orthogonal_(self.actor_critic.critic.fc.weight)
+            nn.init.constant_(self.actor_critic.critic.fc.bias, 0)
+
+        self.agent = DDPPO(
+            actor_critic=self.actor_critic,
+            clip_param=ppo_cfg.clip_param,
+            ppo_epoch=ppo_cfg.ppo_epoch,
+            num_mini_batch=ppo_cfg.num_mini_batch,
+            value_loss_coef=ppo_cfg.value_loss_coef,
+            entropy_coef=ppo_cfg.entropy_coef,
+            lr=ppo_cfg.lr,
+            eps=ppo_cfg.eps,
+            max_grad_norm=ppo_cfg.max_grad_norm,
+            use_normalized_advantage=ppo_cfg.use_normalized_advantage,
         )
-        self.actor_critic.load_state_dict(
-            {
-                k[len("actor_critic.") :]: v
-                for k, v in pretrained_state["state_dict"].items()
-            }
-        )
+
+        # pretrained_state = torch.load(
+        #     self.config.RL.Policy.pretrained_ckpt, map_location=self.device
+        # )
+        # self.actor_critic.load_state_dict(
+        #     {
+        #         k[len("actor_critic."):]: v
+        #         for k, v in pretrained_state["state_dict"].items()
+        #     }
+        # )
         self.actor_critic.eval()
 
+    # _setup_vo_model
+    # _setup_vo_model
+    # _setup_vo_model
     def _setup_vo_model(self) -> None:
 
         # assert self.config.VO.REGRESS_MODEL.regress_type == "sep_act"
 
         assert (
-            "rgb" in self.config.VO.REGRESS_MODEL.visual_type
-            and "depth" in self.config.VO.REGRESS_MODEL.visual_type
+                "rgb" in self.config.VO.REGRESS_MODEL.visual_type
+                and "depth" in self.config.VO.REGRESS_MODEL.visual_type
         ), "Currently not support visual type other than RGB-D.\n"
 
         vo_model_cls = baseline_registry.get_vo_model(self.config.VO.REGRESS_MODEL.name)
         assert (
-            vo_model_cls is not None
+                vo_model_cls is not None
         ), f"{self.config.VO.REGRESS_MODEL.name} is not supported"
 
         agent_sensors = self.config.TASK_CONFIG.SIMULATOR.AGENT_0.SENSORS
         if "rgb" in self.config.VO.REGRESS_MODEL.visual_type:
             assert (
-                "RGB_SENSOR" in agent_sensors
+                    "RGB_SENSOR" in agent_sensors
             ), f"Agent sensor {agent_sensors} does not contain RGB_SENSOR while vo model requries it."
         if "depth" in self.config.VO.REGRESS_MODEL.visual_type:
             assert (
-                "DEPTH_SENSOR" in agent_sensors
+                    "DEPTH_SENSOR" in agent_sensors
             ), f"Agent sensor {agent_sensors} does not contain DEPTH_SENSOR while vo model requries it."
 
         if self.config.VO.REGRESS_MODEL.regress_type == "unified_act":
@@ -205,7 +249,7 @@ class PointNavAgent(Agent):
             model_names = ["all"]
         elif self.config.VO.REGRESS_MODEL.regress_type == "sep_act":
             output_dim = 3
-            model_names = list(ACT_IDX2NAME.values())
+            model_names = [_ for _ in list(ACT_IDX2NAME.values()) if _ != "unified"]
         else:
             raise ValueError
 
@@ -216,8 +260,7 @@ class PointNavAgent(Agent):
                 observation_size=(self.config.VO.VIS_SIZE_W, self.config.VO.VIS_SIZE_H),
                 hidden_size=self.config.VO.REGRESS_MODEL.hidden_size,
                 backbone=self.config.VO.REGRESS_MODEL.visual_backbone,
-                normalize_visual_inputs="rgb"
-                in self.config.VO.REGRESS_MODEL.visual_type,
+                normalize_visual_inputs=True,  # "rgb" in self.config.VO.REGRESS_MODEL.visual_type,
                 output_dim=output_dim,
                 dropout_p=self.config.VO.REGRESS_MODEL.dropout_p,
                 discretized_depth_channels=self.config.VO.REGRESS_MODEL.discretized_depth_channels,
@@ -249,11 +292,11 @@ class PointNavAgent(Agent):
 
             self.vo_model[k].eval()
 
-            if "discretize_depth" in self.config.VO.REGRESS_MODEL.name:
+            if "discretize_depth" in self.config.VO.REGRESS_MODEL.name or "dd" in self.config.VO.REGRESS_MODEL.name:
                 if self.config.VO.REGRESS_MODEL.discretize_depth in ["hard"]:
                     self._discretized_depth_end_vals = []
                     for i in np.arange(
-                        self.config.VO.REGRESS_MODEL.discretized_depth_channels
+                            self.config.VO.REGRESS_MODEL.discretized_depth_channels
                     ):
                         self._discretized_depth_end_vals.append(
                             i
@@ -312,21 +355,25 @@ class PointNavAgent(Agent):
         prev_rgb = prev_obs["rgb"]
         cur_rgb = cur_obs["rgb"]
         # [1, vis_size, vis_size, 6]
-        rgb_pair = (
-            torch.FloatTensor(np.concatenate([prev_rgb, cur_rgb], axis=2))
-            .to(self.device)
-            .unsqueeze(0)
-        )
+        rgb_pair = torch.cat(
+            [
+                torch.tensor(prev_rgb, device=self.device),
+                torch.tensor(cur_rgb, device=self.device),
+            ],
+            dim=2,
+        ).unsqueeze(0)
 
         # [vis_size, vis_size, 1]
         prev_depth = prev_obs["depth"]
         cur_depth = cur_obs["depth"]
         # [1, vis_size, vis_size, 2]
-        depth_pair = (
-            torch.FloatTensor(np.concatenate([prev_depth, cur_depth], axis=2))
-            .to(self.device)
-            .unsqueeze(0)
-        )
+        depth_pair = torch.cat(
+            [
+                torch.tensor(prev_depth, device=self.device),
+                torch.tensor(cur_depth, device=self.device),
+            ],
+            dim=2,
+        ).unsqueeze(0)
 
         if self._vo_obs_transformer is not None:
             tmp_obs = torch.cat((rgb_pair, depth_pair), dim=3)
@@ -344,7 +391,10 @@ class PointNavAgent(Agent):
 
         obs_pairs = {"rgb": rgb_pair, "depth": depth_pair}
 
-        if "discretize_depth" in self.config.VO.REGRESS_MODEL.name:
+        if (
+                "discretize_depth" in self.config.VO.REGRESS_MODEL.name
+                or "dd" in self.config.VO.REGRESS_MODEL.name
+        ):
             assert depth_pair.size(-1) == 2
             prev_discretized_depth = self._discretize_depth_func(depth_pair[0, :, :, 0])
             cur_discretized_depth = self._discretize_depth_func(depth_pair[0, :, :, 1])
@@ -354,15 +404,39 @@ class PointNavAgent(Agent):
             obs_pairs["discretized_depth"] = discretized_depth_pair
 
         if "top_down" in self.config.VO.REGRESS_MODEL.name:
-            prev_top_down_view = self._top_down_view_generator.gen_top_down_view(
-                depth_pair[0, :, :, 0].unsqueeze(-1)
-            )
-            cur_top_down_view = self._top_down_view_generator.gen_top_down_view(
-                depth_pair[0, :, :, 1].unsqueeze(-1)
-            )
-            top_down_view_pair = torch.cat(
-                (prev_top_down_view, cur_top_down_view), dim=2,
-            ).unsqueeze(0)
+            # process top-down projection
+            if isinstance(
+                    self._top_down_view_generator,
+                    NormalizedDepth2TopDownViewHabitatTorch,
+            ):
+                prev_top_down_view = self._top_down_view_generator.gen_top_down_view(
+                    depth_pair[0, :, :, 0].unsqueeze(-1)
+                )
+                cur_top_down_view = self._top_down_view_generator.gen_top_down_view(
+                    depth_pair[0, :, :, 1].unsqueeze(-1)
+                )
+                top_down_view_pair = torch.cat(
+                    (prev_top_down_view, cur_top_down_view), dim=2,
+                ).unsqueeze(0)
+            elif isinstance(
+                    self._top_down_view_generator, NormalizedDepth2TopDownViewHabitat
+            ):
+                prev_top_down_view = self._top_down_view_generator.gen_top_down_view(
+                    depth_pair[0, :, :, 0, np.newaxis].cpu().numpy()
+                )
+                cur_top_down_view = self._top_down_view_generator.gen_top_down_view(
+                    depth_pair[0, :, :, 1, np.newaxis].cpu().numpy()
+                )
+                top_down_view_pair = (
+                    torch.tensor(
+                        np.concatenate(
+                            [prev_top_down_view, cur_top_down_view], axis=2
+                        ), device=depth_pair.device, dtype=obs_pairs["rgb"].dtype)  # dtype hack
+                        .unsqueeze(0)
+                )
+            else:
+                raise ValueError
+
             obs_pairs["top_down_view"] = top_down_view_pair
 
         local_delta_states = []
@@ -476,17 +550,23 @@ class PointNavAgent(Agent):
 
 
 def main():
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--evaluation", type=str, required=True, choices=["local", "remote"]
     )
     args = parser.parse_args()
 
-    config_paths = os.environ["CHALLENGE_CONFIG_FILE"]
-
+    # config_paths = os.environ["CHALLENGE_CONFIG_FILE"]
+    # config = get_config(
+    #     "challenge2020_pointnav_config.yaml", ["BASE_TASK_CONFIG_PATH", config_paths]
+    # ).clone()
+    # cfg = "/mnt/terra/xoding/ruslan/config_files/challenge_pointnav2021.local.rgbd.CPU.yaml"
+    # cfg = "configs/challenge_pointnav2021.local.rgbd.CPU.yaml"
+    cfg = "configs/challenge_pointnav2021.local.rgbd.GPU.yaml"
+    # cfg = "configs/point_nav_habitat_challenge_2020.yaml"
     config = get_config(
-        "challenge2020_pointnav_config.yaml", ["BASE_TASK_CONFIG_PATH", config_paths]
+        "configs/rl/ddppo_pointnav.yaml",
+        ["BASE_TASK_CONFIG_PATH", cfg]
     ).clone()
 
     print(config)
@@ -509,6 +589,7 @@ def main():
     agent = PointNavAgent(config, args.evaluation)
 
     if args.evaluation == "local":
+        os.environ["CHALLENGE_CONFIG_FILE"] = cfg
         challenge = habitat.Challenge(eval_remote=False)
         challenge._env.seed(config.SEED)
     else:
