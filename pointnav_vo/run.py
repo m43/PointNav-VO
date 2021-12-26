@@ -10,13 +10,15 @@ import numpy as np
 
 import torch
 
-from habitat import logger
+from habitat import logger, get_config
 
+from corruptions.gaussian_noise_model_torch import GaussianNoiseModelTorch
+from corruptions.parser import get_corruptions_parser, apply_corruptions_to_config, get_runid_and_logfolder
 from pointnav_vo.utils.config_utils import update_config_log
 from pointnav_vo.utils.baseline_registry import baseline_registry
 from pointnav_vo.config.rl_config.default import get_config as get_rl_config
 from pointnav_vo.config.vo_config.default import get_config as get_vo_config
-
+from utils.util import ensure_dir
 
 VIS_TYPE_DICT = {
     "rgb": "rgb",
@@ -32,7 +34,8 @@ GEO_SHORT_NAME = {
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    _ = GaussianNoiseModelTorch()
+    parser = get_corruptions_parser()
     parser.add_argument(
         "--task-type",
         choices=["rl", "vo"],
@@ -69,12 +72,33 @@ def main():
         nargs=argparse.REMAINDER,
         help="Modify config options from command line",
     )
-
     args = parser.parse_args()
-    run_exp(**vars(args))
+    print(args)
+
+    if args.task_type == "rl":
+        config = get_rl_config(args.exp_config, args.opts)
+        model_infos = config.RL.Policy
+    elif args.task_type == "vo":
+        config = get_vo_config(args.exp_config, args.opts)
+        model_infos = config.VO.MODEL
+    else:
+        pass
+
+    task_config = get_config(args.challenge_config_file)
+    apply_corruptions_to_config(args, task_config)
+    args.run_id, args.log_folder = get_runid_and_logfolder(args, task_config)
+
+    config.defrost()
+    config.EVAL.TEST_EPISODE_COUNT = args.num_episodes
+    config.EVAL.SPLIT = args.dataset_split
+    config.TASK_CONFIG = task_config
+    config.freeze()
+
+    run_exp(config, **args.__dict__)
 
 
 def run_exp(
+    config,
     task_type: str,
     noise: int,
     exp_config: str,
@@ -82,6 +106,7 @@ def run_exp(
     n_gpu: str,
     cur_time: str,
     opts=None,
+    **kwargs
 ) -> None:
     r"""Runs experiment given mode and config
 
@@ -93,15 +118,6 @@ def run_exp(
     Returns:
         None.
     """
-
-    if task_type == "rl":
-        config = get_rl_config(exp_config, opts)
-        model_infos = config.RL.Policy
-    elif task_type == "vo":
-        config = get_vo_config(exp_config, opts)
-        model_infos = config.VO.MODEL
-    else:
-        pass
 
     if task_type == "rl":
         rgb_noise = "NOISE_MODEL" in config.TASK_CONFIG.SIMULATOR.RGB_SENSOR
@@ -271,6 +287,19 @@ def run_exp(
         config.freeze()
 
     config = update_config_log(config, run_type, log_dir)
+    config.defrost()
+    config.LOG_DIR = kwargs['log_folder']
+    config.LOG_FILE = os.path.join(kwargs['log_folder'], "train.log")
+    config.INFO_DIR = os.path.join(kwargs['log_folder'], "infos")
+    ensure_dir(config.INFO_DIR)
+    config.TENSORBOARD_DIR = os.path.join(kwargs['log_folder'], "tb")
+    ensure_dir(config.TENSORBOARD_DIR)
+    # config.VIDEO_OPTION = ["video"]  # choices: ["none", "disk", "tensorboard"], "none" is used for storing image info but not generating video
+    config.VIDEO_OPTION = []  # choices: ["none", "disk", "tensorboard"], "none" is used for storing image info but not generating video
+    config.VIDEO_DIR = os.path.join(kwargs['log_folder'], "videos")
+    ensure_dir(config.VIDEO_DIR)
+    config.LOG_INTERVAL = kwargs['video_log_interval']
+    config.freeze()
     logger.add_filehandler(config.LOG_FILE)
 
     # reproducibility set up
@@ -297,6 +326,13 @@ def run_exp(
             raise NotImplementedError
     else:
         raise ValueError
+
+    # TODO corruptions only implemented for the ppo_trainer
+    print(f"Engine_name: {engine_name}")
+    assert engine_name == "efficient_ddppo"
+
+    # TODO corruptions only tested for rl
+    assert task_type == "rl"
 
     if task_type == "rl":
         trainer_init = baseline_registry.get_trainer(engine_name)
@@ -336,7 +372,7 @@ def run_exp(
                         rank_top_k=config.VO.EVAL.rank_top_k,
                     )
         else:
-            trainer = trainer_init(config, run_type, verbose=False)
+            trainer = trainer_init(config, run_type, verbose=False, **kwargs)
             trainer.eval()
     else:
         raise ValueError

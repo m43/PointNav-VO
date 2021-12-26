@@ -1,11 +1,12 @@
-BASE_TASK_CONFIG_PATH: "configs/point_nav_habitat_challenge_2020.yaml"
+BASE_TASK_CONFIG_PATH: "configs/challenge_pointnav2021.local.rgbd.GPU.yaml"
 
 # training settings
 ENGINE_NAME: "efficient_ddppo"
 ENV_NAME: "NavRLEnv"
 SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
 NUM_UPDATES: 5000000
-NUM_PROCESSES: 2
+NUM_PROCESSES: 1
+NUM_ENVIRONMENTS: 1
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 
@@ -22,7 +23,7 @@ LOG_INTERVAL: 10
 
 # evaluation settings
 EVAL:
-  SPLIT: val
+  SPLIT: dummy
   TEST_EPISODE_COUNT: -1
   SAVE_RANKED_IMGS: False
   RANK_TOP_K: 1

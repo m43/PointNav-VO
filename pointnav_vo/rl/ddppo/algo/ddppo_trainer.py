@@ -63,7 +63,7 @@ class DDPPOTrainer(PPOTrainer):
     # max rollout length
     SHORT_ROLLOUT_THRESHOLD: float = 0.25
 
-    def __init__(self, config=None, run_type="train", verbose=True):
+    def __init__(self, config=None, run_type="train", verbose=True, **kwargs):
 
         if config.RESUME_TRAIN:
             new_config = config
@@ -87,7 +87,7 @@ class DDPPOTrainer(PPOTrainer):
         else:
             self.resume_state_file = None
 
-        super().__init__(config)
+        super().__init__(config, **kwargs)
 
     def _set_up_nav_obs_transformer(self) -> None:
 
@@ -237,6 +237,8 @@ class DDPPOTrainer(PPOTrainer):
             )
 
         observations = self.envs.reset()
+        for i in range(len(observations)):
+            observations[i]["rgb"] = self.my_benchmark.corrupt_rgb_observation(observations[i]["rgb"])
         batch = batch_obs(observations)
 
         if self.config.RL.TUNE_WITH_VO:

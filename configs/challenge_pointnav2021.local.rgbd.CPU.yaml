@@ -38,6 +38,8 @@ SIMULATOR:
     POSITION: [0, 0.88, 0]
 #    ORIENTATION: [-0.3490659, 0, 0] # -20 degrees
     NOISE_MODEL: "RedwoodDepthNoiseModel"
+    NOISE_MODEL_KWARGS:
+      noise_multiplier: 1.0
 
   ACTION_SPACE_CONFIG: 'pyrobotnoisy'
   NOISE_MODEL:

@@ -59,6 +59,6 @@ TASK:
 
 DATASET:
   TYPE: PointNav-v1
-  SPLIT: train
+  SPLIT: val
   SCENES_DIR: dataset/Gibson
   DATA_PATH: dataset/habitat_datasets/pointnav/gibson/v2/{split}/{split}.json.gz

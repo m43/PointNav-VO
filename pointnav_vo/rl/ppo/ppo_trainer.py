@@ -26,6 +26,7 @@ from habitat.utils.geometry_utils import (
 )
 from habitat.utils.visualizations import maps
 
+from corruptions.my_benchmark import MyBenchmark
 from pointnav_vo.utils.baseline_registry import baseline_registry
 from pointnav_vo.utils.tensorboard_utils import TensorboardWriter
 from pointnav_vo.utils.misc_utils import (
@@ -50,7 +51,12 @@ class PPOTrainer(BaseRLTrainerWithVO):
     """
     supported_tasks = ["Nav-v0"]
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, **kwargs):
+        # In this case, the benchmark is used only for its corruption applying capabilites
+        # that we want to reuse
+        self.my_benchmark = MyBenchmark(config.TASK_CONFIG, **kwargs)
+        print("MyBenchmark Ready")
+
         super().__init__(config)
         self.actor_critic = None
         self.agent = None
@@ -200,6 +206,8 @@ class PPOTrainer(BaseRLTrainerWithVO):
 
         outputs = self.envs.step([a[0].item() for a in actions])
         observations, rewards, dones, infos = [list(x) for x in zip(*outputs)]
+        for i in range(len(observations)):
+            observations[i]["rgb"] = self.my_benchmark.corrupt_rgb_observation(observations[i]["rgb"])
 
         env_time += time.time() - t_step_env
 
@@ -347,6 +355,8 @@ class PPOTrainer(BaseRLTrainerWithVO):
         rollouts.to(self.device)
 
         observations = self.envs.reset()
+        for i in range(len(observations)):
+            observations[i]["rgb"] = self.my_benchmark.corrupt_rgb_observation(observations[i]["rgb"])
         batch = batch_obs(observations)
 
         for sensor in rollouts.observations:
@@ -527,6 +537,7 @@ class PPOTrainer(BaseRLTrainerWithVO):
         if checkpoint_index == 0:
             logger.info(f"Eval config:\n{config}\n")
 
+        assert config.TASK_CONFIG.EASTER_EGG == 72
         self.envs = construct_envs(config, get_env_class(config.ENV_NAME))
 
         # set up nav policy
@@ -551,6 +562,8 @@ class PPOTrainer(BaseRLTrainerWithVO):
         self.metric_uuid = measure_type(sim=None, task=None, config=None)._get_uuid()
 
         observations = self.envs.reset()
+        for i in range(len(observations)):
+            observations[i]["rgb"] = self.my_benchmark.corrupt_rgb_observation(observations[i]["rgb"])
 
         # completely stuck count
         dx_stuck_cnt = [0 for _ in range(self.envs.num_envs)]
@@ -681,6 +694,8 @@ class PPOTrainer(BaseRLTrainerWithVO):
             env_timings.append(time.time() - tmp_env_time)
 
             observations, rewards, dones, infos = [list(x) for x in zip(*outputs)]
+            for i in range(len(observations)):
+                observations[i]["rgb"] = self.my_benchmark.corrupt_rgb_observation(observations[i]["rgb"])
 
             not_done_masks = torch.tensor(
                 [[0.0] if done else [1.0] for done in dones],

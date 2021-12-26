@@ -135,6 +135,10 @@ class BaseRLTrainer(BaseTrainer):
                 except:
                     current_overall_result["frames"] = [None]
 
+                print(os.path.join(
+                        self.config.INFO_DIR,
+                        "{}.infos.p".format(current_ckpt_filename.split(".pth")[0]),
+                    ))
                 self._save_info_dict(
                     current_episode_result,
                     os.path.join(
@@ -231,6 +235,9 @@ class BaseRLTrainer(BaseTrainer):
                                 assert len(ranked_list) == top_k
 
                                 for j, step_info in enumerate(ranked_list):
+
+                                    # TODO
+                                    assert False
 
                                     # obtain observation
                                     prev_obs = env._sim.get_observations_at(
