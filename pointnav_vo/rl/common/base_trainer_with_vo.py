@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
-import numpy as np
-from typing import ClassVar, Dict, List
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 
 import torch
-
-import habitat
 from habitat import Config, logger
 
 from pointnav_vo.rl.common.base_trainer import BaseRLTrainer
@@ -15,7 +11,6 @@ from pointnav_vo.utils.geometry_utils import (
     NormalizedDepth2TopDownViewHabitat,
     NormalizedDepth2TopDownViewHabitatTorch,
 )
-from pointnav_vo.utils.tensorboard_utils import TensorboardWriter
 from pointnav_vo.utils.misc_utils import ResizeCenterCropper, Resizer
 from pointnav_vo.vo.common.common_vars import *
 
@@ -137,8 +132,8 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
         assert torch.min(raw_depth) >= 0.0
 
         discretized_depth = torch.zeros(
-            (*raw_depth.shape, self.config.VO.REGRESS_MODEL.discretized_depth_channels)
-        ).to(raw_depth.device)
+            (*raw_depth.shape, self.config.VO.REGRESS_MODEL.discretized_depth_channels),
+            device=raw_depth.device)
 
         for i in np.arange(self.config.VO.REGRESS_MODEL.discretized_depth_channels):
             if i == self.config.VO.REGRESS_MODEL.discretized_depth_channels - 1:
@@ -174,8 +169,8 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
 
         rgb_pair = torch.cat(
             [
-                torch.FloatTensor(prev_rgb).to(self.device),
-                torch.FloatTensor(cur_rgb).to(self.device),
+                torch.tensor(prev_rgb, device=self.device),
+                torch.tensor(cur_rgb, device=self.device),
             ],
             dim=2,
         ).unsqueeze(0)
@@ -186,8 +181,8 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
 
         depth_pair = torch.cat(
             [
-                torch.FloatTensor(prev_depth).to(self.device),
-                torch.FloatTensor(cur_depth).to(self.device),
+                torch.tensor(prev_depth, device=self.device),
+                torch.tensor(cur_depth, device=self.device),
             ],
             dim=2,
         ).unsqueeze(0)
@@ -213,7 +208,6 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
                 "discretize_depth" in self.config.VO.REGRESS_MODEL.name
                 or "dd" in self.config.VO.REGRESS_MODEL.name
             ):
-
                 # process depth discretization
                 assert depth_pair.size(-1) == 2
 
@@ -255,13 +249,11 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
                         depth_pair[0, :, :, 1, np.newaxis].cpu().numpy()
                     )
                     top_down_view_pair = (
-                        torch.FloatTensor(
+                        torch.tensor(
                             np.concatenate(
                                 [prev_top_down_view, cur_top_down_view], axis=2
-                            )
-                        )
-                        .to(depth_pair.device)
-                        .unsqueeze(0)
+                            ), device=depth_pair.device)
+                            .unsqueeze(0)
                     )
                 else:
                     raise ValueError
@@ -285,7 +277,7 @@ class BaseRLTrainerWithVO(BaseRLTrainer):
                 if self.config.VO.REGRESS_MODEL.mode == "det":
                     self.vo_model[tmp_key].eval()
                     if "act_embed" in self.config.VO.REGRESS_MODEL.name:
-                        actions = torch.Tensor([act]).long().to(rgb_pair.device)
+                        actions = torch.tensor([act], device=rgb_pair.device).long()
                         tmp_deltas = self.vo_model[tmp_key](obs_pairs, actions)
                     else:
                         tmp_deltas = self.vo_model[tmp_key](obs_pairs)
