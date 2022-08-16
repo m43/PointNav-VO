@@ -11,8 +11,8 @@ SIMULATOR:
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
     ALLOW_SLIDING: False
-    GPU_GPU: True
-#    GPU_GPU: False
+#    GPU_GPU: True
+    GPU_GPU: False
   RGB_SENSOR:
     # WIDTH: 640
     # HEIGHT: 360
@@ -21,8 +21,8 @@ SIMULATOR:
     HFOV: 70
     POSITION: [0, 0.88, 0]
 #    ORIENTATION: [-0.3490659, 0, 0] # -20 degrees
-    NOISE_MODEL: "GaussianNoiseModelTorch"
-#    NOISE_MODEL: "GaussianNoiseModel"
+#    NOISE_MODEL: "GaussianNoiseModelTorch"
+    NOISE_MODEL: "GaussianNoiseModel"
     NOISE_MODEL_KWARGS:
       intensity_constant: 0.1
 #      intensity_constant: 0.0
@@ -62,6 +62,6 @@ TASK:
 
 DATASET:
   TYPE: PointNav-v1
-  SPLIT: dummy
-  DATA_PATH: data/datasets/pointnav/gibson/v2/{split}/{split}.json.gz
+  SPLIT: val_mini
+  DATA_PATH: dataset/habitat_datasets/pointnav/gibson/v2/{split}/{split}.json.gz
   SCENES_DIR: data/scene_datasets/
