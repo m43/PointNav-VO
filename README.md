@@ -1,129 +1,110 @@
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+# Robustness of Embodied Point Navigation Agents: VO2021 agent
 
-<h1 align="center">PointNav-VO</h1>
-<p align="center">The Surprising Effectiveness of Visual Odometry Techniques for Embodied PointGoal Navigation</p>
+[Frano Rajic](https://m43.github.io/), [Donggyun Park](https://ch.linkedin.com/in/donggyunpark)
 
-<p align="center"><b><a href="https://xiaoming-zhao.github.io/projects/pointnav-vo/">Project Page</a> | <a href="https://arxiv.org/abs/2108.11550">Paper</a></b></p>
+[`Project Website`](https://m43.github.io/projects/embodied-ai-robustness/) | [`Paper`](https://www.youtube.com/watch?v=dQw4w9WgXcQ) | [`Code [UCU Mlab]`](https://github.com/m43/ucu-mlab) | [**`>> Code [VO2021] <<`**](https://github.com/m43/vo2021)
 
+This repository contains the evaluation code for reproducing the benchmark results for the VO2021 agent. The codebase of the agent is taken from [Xiaoming-Zhao/PointNav-VO](https://github.com/Xiaoming-Zhao/PointNav-VO).
 
-<p align="center">
-  <img width="100%" src="media/nav.gif"/>
-</p>
+## Set-up
 
-## Table of Contents
-
-- [Setup](#setup)
-- [Reproduction](#reproduce)
-- [Plug-and-play](#use-vo-as-a-drop-in-module)
-- [Train](#train-your-own-vo)
-- [Citation](#citation)
-
-## Setup
-
-### Install Dependencies
-
+Start by cloning the repository:
 ```bash
-conda env create -f environment.yml
+git clone https://github.com/m43/vo2021.git
+cd vo2021
 ```
 
-### Install Habitat
-
-The repo is tested under the following commits of [habitat-lab](https://github.com/facebookresearch/habitat-lab) and [habitat-sim](https://github.com/facebookresearch/habitat-sim).
+With the repository cloned, we recommend creating a new [conda](https://docs.conda.io/en/latest/) virtual environment using the provided environment setup script, adapted for our local machine setup. Depending on your local machine, you might want to remove the `module purge` and `module load ...` lines in the script, since we used the to prepare the cluster machines we worked with. The script might take a long time to run as `habitat-sim` must be built. The script will print out verbose logs about what bash command was run (`set -o xtrace`) and will stop if an error is encountered (`set -e`). To run the environment setup script:
 ```bash
-habitat-lab == d0db1b55be57abbacc5563dca2ca14654c545552
-habitat-sim == 020041d75eaf3c70378a9ed0774b5c67b9d3ce99
+bash environment_setup.sh
 ```
 
-Note, to align with Habitat Challenge 2020 settings (see Step 36 in [the Dockerfile](https://hub.docker.com/layers/fairembodied/habitat-challenge/testing_2020_habitat_base_docker/images/sha256-761ca2230667add6ab241a0eaff16984dc271486ec659984ae13ccab57a9c52b?context=explore)), when installing `habitat-sim`, we compiled without CUDA support as
+The environment setup script will also automatically download the Gibson dataset split data (a bunch of compressed `.json` files defining the splits of the Gibson dataset) with `gdown`. However, the Gibson dataset (~10GB) itself needs to be downloaded separately. To download (and link) the Gibson dataset, you could do the following:
 ```bash
-python setup.py install --headless
+# Optionally: create (or move) to a folder where you usually store datasets
+mkdir -p /home/frano/data
+cd /home/frano/data
+
+# Sign agreement and download gibson_habitat_trainval.zip: https://docs.google.com/forms/d/e/1FAIpQLScWlx5Z1DM1M-wTSXaa6zV8lTFkPmTHW1LqMsoCBDWsTDjBkQ/viewform
+# wget link/to/gibson_habitat_trainval.zip
+unzip gibson_habitat_trainval.zip
+
+cd /get/back/to/the/cloned/code/repo # cd -
+mkdir -p ./dataset
+mkdir -p ./data
+
+# Link the Gibson dataset correctly
+ln -s /home/frano/data ./dataset/Gibson
+ln -s /home/frano/data data/scene_datasets
+
+# Verify that everything was linked correctly:
+tree -L 1 /home/frano/data/gibson/
+# /home/frano/data/gibson/
+# ├── Ackermanville.glb
+# ├── Ackermanville.navmesh
+# ├── Adairsville.glb
+# ├── Adairsville.navmesh
+# ├── Adrian.glb
+# ├── Adrian.navmesh
+# ├── Airport.glb
+# ├── Airport.navmesh
+# ├── Albertville.glb
+# ...
+# └── Yscloskey.navmesh
+tree dataset/ -L 5
+# dataset/
+# ├── Gibson -> /home/frano/data
+# └── habitat_datasets
+#     └── pointnav
+#         └── gibson
+#             ├── gibson_quality_ratings.csv
+#             └── v2
+#                 ├── train
+#                 ├── val
+#                 └── val_mini
+tree -L 2 data dataset
+# data
+# └── scene_datasets -> /home/frano/data
+# dataset/
+# ├── Gibson -> /home/frano/data/
+# └── habitat_datasets
+#     └── pointnav
 ```
 
-There was a discrepancy between noises models in CPU and CPU versions which has now been fixed, see [this issue](https://github.com/facebookresearch/habitat-sim/pull/987). Therefore, to reproduce the results in the paper with our pre-trained weights, you need to use noises model of CPU-version.
-
-### Download Data
-
-We need two datasets to enable running of this repo:
-1. [Gibson scene dataset](https://github.com/StanfordVL/GibsonEnv/blob/f474d9e/README.md#database)
-2. [PointGoal Navigation splits](https://github.com/facebookresearch/habitat-lab/blob/d0db1b5/README.md#task-datasets), we need `pointnav_gibson_v2.zip`.
-
-Please follow [Habitat's instruction](https://github.com/facebookresearch/habitat-lab/blob/d0db1b5/README.md#task-datasets) to download them. We assume all data is put under `./dataset` with structure:
-```
-.
-+-- dataset
-|  +-- Gibson
-|  |  +-- gibson
-|  |  |  +-- Adrian.glb
-|  |  |  +-- Adrian.navmesh
-|  |  |  ...
-|  +-- habitat_datasets
-|  |  +-- pointnav
-|  |  |  +-- gibson
-|  |  |  |  +-- v2
-|  |  |  |  |  +-- train
-|  |  |  |  |  +-- val
-|  |  |  |  |  +-- valmini
-```
-
-## Reproduce
-
-Download pretrained checkpoints of RL navigation policy and VO from [this link](https://drive.google.com/drive/folders/1HG_d-PydxBBiDSnqG_GXAuG78Iq3uGdr?usp=sharing). Put them under `pretrained_ckpts` with the following structure:
-```
-.
-+-- pretrained_ckpts
-|  +-- rl
-|  |  +-- no_tune
-|  |  |  +-- rl_no_tune.pth
-|  |  +-- tune_vo
-|  |  |  +-- rl_tune_vo.pth
-|  +-- vo
-|  |  +-- act_forward.pth
-|  |  +-- act_left_right_inv_joint.pth
-```
-
-Run the following command to reproduce navigation results. On Intel(R) Xeon(R) CPU E5-2683 v4 @ 2.10GHz and a Nvidia GeForce GTX 1080 Ti, it takes around 4.5 hours to complete evaluation on all 994 episodes with navigation policy tuned with VO.
+Finally, download the pretrained checkpoints at [this link](https://drive.google.com/drive/folders/1HG_d-PydxBBiDSnqG_GXAuG78Iq3uGdr?usp=sharing) from the original author (as described in [Xiaoming-Zhao/PointNav-VO](https://github.com/Xiaoming-Zhao/PointNav-VO)). Put them under `pretrained_ckpts` with the following structure:
 ```bash
-cd /path/to/this/repo
-export POINTNAV_VO_ROOT=$PWD
+gdown --folder 1HG_d-PydxBBiDSnqG_GXAuG78Iq3uGdr --output pretrained_ckpts
 
-export NUMBA_NUM_THREADS=1 && \
-export NUMBA_THREADING_LAYER=workqueue && \
-conda activate pointnav-vo && \
-python ${POINTNAV_VO_ROOT}/launch.py \
---repo-path ${POINTNAV_VO_ROOT} \
---n_gpus 1 \
---task-type rl \
---noise 1 \
---run-type eval \
---addr 127.0.1.1 \
---port 8338
+tree pretrained_ckpts
+# pretrained_ckpts
+# ├── rl
+# │   ├── no_tune
+# │   │   └── rl_no_tune.pth
+# │   └── tune_vo
+# │       └── rl_tune_vo.pth
+# └── vo
+#     ├── act_forward.pth
+#     └── act_left_right_inv_joint.pth
 ```
 
-## Use VO as a Drop-in Module
+## Results reproduction
 
-We provide a class `BaseRLTrainerWithVO` that contains all necessary functions to compute odometry in [base_trainer_with_vo.py](./pointnav_vo/rl/common/base_trainer_with_vo.py). Specifically, you can use `_compute_local_delta_states_from_vo` to compute odometry based on adjacent observations. The code sturcture will be something like:
-```python
-local_delta_states = _compute_local_delta_states_from_vo(prev_obs, cur_obs, action)
-cur_goal = compute_goal_pos(prev_goal, local_delta_states)
+Activate the created environemnt:
+```bash
+# module purge
+# module load gcc/8.4.0-cuda cuda/10.1
+conda activate vo2021
 ```
 
-To get more sense about how to use this function, please refer to [challenge2020_agent.py](./challenge_2020/challenge2020_agent.py), which is the agent we used in [HabitatChallenge 2020](https://eval.ai/web/challenges/challenge-page/580/leaderboard/1631#leaderboardrank-1).
-
-## Train Your Own VO
-
-See details in [TRAIN.md](./TRAIN.md)
-
-## Citation
-
-Please cite the following papers if you found our model useful. Thanks!
-
->Xiaoming Zhao, Harsh Agrawal, Dhruv Batra, and Alexander Schwing. The Surprising Effectiveness of Visual Odometry Techniques for Embodied PointGoal Navigation. ICCV 2021.
+To reproduce the Color Jitter visual corruption results on the validation subset (row 16 of Table 1 of the paper), run the following:
 ```
-@inproceedings{ZhaoICCV2021,
-  title={{The Surprising Effectiveness of Visual Odometry Techniques for Embodied PointGoal Navigation}},
-  author={Xiaoming Zhao and Harsh Agrawal and Dhruv Batra and Alexander Schwing},
-  booktitle={Proc. ICCV},
-  year={2021},
-}
+python -m pointnav_vo.run --task-type rl --noise 1 --exp-config configs/rl/ddppo_pointnav.yaml --run-type eval --n-gpu 1 --cur-time 123 --video_log_interval 200 --challenge_config_file config_files/challenge_pointnav2021.local.rgbd.GPU.yaml --agent_name vo --dataset_split val --seed 72 --color_jitter
 ```
 
+This run configuraiton can be found in `slurm/sbatch_8/8-01.sh`. For other run configurations, consult the set of SLURM scripts in `slurm/sbatch_8` and `slurm/sbatch_11`. Alternatively, consult the `eval.sh` script to see how all the possible corruption settings can be run.
+
+## Citing
+If you find our work useful, please consider citing:
+```BibTeX
+[WIP]: Will be added once the Proceedings of the ECCV 2022 Workshops are published.
+```

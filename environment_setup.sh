@@ -10,14 +10,12 @@ module load python/3.7.7
 module load cuda/10.1
 module load cmake
 
-conda env create -f environment.yml -n vo
+conda env create -f environment.yml -n vo2021
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate vo
+conda activate vo2021
 
 conda install pip -y
-#pip install torch==1.7.1 torchvision==0.8.2 --prefix="$CONDA_PREFIX"
-conda install -y pytorch torchvision cudatoolkit=10.0 -c pytorch
-
+conda install -y pytorch=1.6.0 torchvision=0.7.0 -c pytorch
 cd ..
 
 # ----------------------------------------------------------------------------
@@ -36,7 +34,7 @@ module purge
 module load gcc/8.4.0
 module load cuda/10.1
 module load cmake
-python setup.py install --headless --with-cuda --prefix="$CONDA_PREFIX"
+python setup.py install --headless --prefix="$CONDA_PREFIX"
 
 cd ..
 
@@ -58,12 +56,15 @@ python setup.py develop --all --prefix="$CONDA_PREFIX"
 
 cd ..
 
-# ---------------------------------------------   -------------------------------
+# ----------------------------------------------------------------------------
 #   go back home
 # ----------------------------------------------------------------------------
 cd $PWD_START
 
-# ----14------------------------------------------------------------------------
+pip install torch==1.6.0 torchvision==0.7.0
+pip install scikit-image wand pandas torchvision opencv-python==3.4.2.17 numpy==1.17.3 numba Pillow==8.4.0
+
+# ----------------------------------------------------------------------------
 #   download the dataset for Gibson PointNav
 # ----------------------------------------------------------------------------
 pip install gdown --prefix="$CONDA_PREFIX"
@@ -129,7 +130,7 @@ echo -e "\n${RED}NOTE:${NOCOLOR} Pretrained checkpoints should be downloaded by 
 # cd /scratch/izar/rajic/vo
 # module purge
 # module load gcc/8.4.0-cuda cuda/10.1
-# conda activate vo
+# conda activate vo2021
 
 # [ -d "./pretrained_ckpts" ] && echo "Directory ./pretrained_ckpts found."
 # export CUDA_LAUNCH_BLOCKING=1 && \
