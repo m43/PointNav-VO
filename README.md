@@ -89,7 +89,7 @@ tree pretrained_ckpts
 
 ## Results reproduction
 
-Activate the created environemnt:
+Activate the created environment:
 ```bash
 # module purge
 # module load gcc/8.4.0-cuda cuda/10.1
@@ -101,7 +101,7 @@ To reproduce the Color Jitter visual corruption results on the validation subset
 python -m pointnav_vo.run --task-type rl --noise 1 --exp-config configs/rl/ddppo_pointnav.yaml --run-type eval --n-gpu 1 --cur-time 123 --video_log_interval 200 --challenge_config_file config_files/challenge_pointnav2021.local.rgbd.GPU.yaml --agent_name vo --dataset_split val --seed 72 --color_jitter
 ```
 
-This run configuraiton can be found in `slurm/sbatch_8/8-01.sh`. For other run configurations, consult the set of SLURM scripts in `slurm/sbatch_8` and `slurm/sbatch_11`. Alternatively, consult the `eval.sh` script to see how all the possible corruption settings can be run.
+This run configuration can be found in `slurm/sbatch_8/8-01.sh`. For other run configurations, consult the set of SLURM scripts in `slurm/sbatch_8` and `slurm/sbatch_11`. Alternatively, consult the `eval.sh` script to see how all the possible corruption settings can be run.
 
 ## Citing
 If you find our work useful, please consider citing:
