@@ -1,6 +1,6 @@
 # Robustness of Embodied Point Navigation Agents: VO2021 agent
 
-[Frano Rajic](https://m43.github.io/), [Donggyun Park](https://ch.linkedin.com/in/donggyunpark)
+[Frano Rajic](https://m43.github.io/)
 
 [`Project Website`](https://m43.github.io/projects/embodied-ai-robustness/) | [`Paper`](https://www.youtube.com/watch?v=dQw4w9WgXcQ) | [`Code [UCU Mlab]`](https://github.com/m43/ucu-mlab) | [**`>> Code [VO2021] <<`**](https://github.com/m43/vo2021)
 
