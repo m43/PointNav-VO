@@ -96,7 +96,7 @@ Activate the created environemnt:
 conda activate vo2021
 ```
 
-To reproduce the Color Jitter visual corruption results on the validation subset (row 16 of Table 1 of the paper), run the following:
+To reproduce the Color Jitter visual corruption results on the validation subset (row 16 of Table 1 of the paper), run the command below. Unlike for other agents, we did not control all sources of randomness of the VO agent and the numbers will differ slightly from the reported ones.
 ```
 python -m pointnav_vo.run --task-type rl --noise 1 --exp-config configs/rl/ddppo_pointnav.yaml --run-type eval --n-gpu 1 --cur-time 123 --video_log_interval 200 --challenge_config_file config_files/challenge_pointnav2021.local.rgbd.GPU.yaml --agent_name vo --dataset_split val --seed 72 --color_jitter
 ```
