@@ -2,7 +2,7 @@
 
 [Frano Rajic](https://m43.github.io/)
 
-[`Project Website`](https://m43.github.io/projects/embodied-ai-robustness/) | [`Paper`](https://www.youtube.com/watch?v=dQw4w9WgXcQ) | [`Code [UCU Mlab]`](https://github.com/m43/ucu-mlab) | [**`>> Code [VO2021] <<`**](https://github.com/m43/vo2021)
+[`Project Website`](https://m43.github.io/projects/embodied-ai-robustness/) | [`Paper`](https://link.springer.com/chapter/10.1007/978-3-031-25075-0_15) | [`Code [UCU Mlab]`](https://github.com/m43/ucu-mlab) | [**`>> Code [VO2021] <<`**](https://github.com/m43/vo2021)
 
 This repository contains the evaluation code for reproducing the benchmark results for the VO2021 agent. The codebase of the agent is taken from [Xiaoming-Zhao/PointNav-VO](https://github.com/Xiaoming-Zhao/PointNav-VO).
 
@@ -106,5 +106,12 @@ This run configuration can be found in `slurm/sbatch_8/8-01.sh`. For other run c
 ## Citing
 If you find our work useful, please consider citing:
 ```BibTeX
-[WIP]: Will be added once the Proceedings of the ECCV 2022 Workshops are published.
+@inproceedings{rajivc2023robustness,
+  title={Robustness of Embodied Point Navigation Agents},
+  author={Raji{\v{c}}, Frano},
+  booktitle={Computer Vision--ECCV 2022 Workshops: Tel Aviv, Israel, October 23--27, 2022, Proceedings, Part VI},
+  pages={193--204},
+  year={2023},
+  organization={Springer}
+}
 ```
